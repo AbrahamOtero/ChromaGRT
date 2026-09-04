@@ -1,0 +1,74 @@
+{
+  "dataset_label": "Curated RepoRT reversed-phase no-SMRT dataset with Tanaka descriptors",
+  "dataset_version": "article-v1",
+  "key_columns": [
+    "cc_id",
+    "molecule_id",
+    "inchi.std"
+  ],
+  "condition_directory_mapping": {
+    "filename": "cc_id_to_dir_id.tsv",
+    "format": "one cc_id-dir_id pair per row",
+    "n_conditions": 151,
+    "n_dir_ids": 254,
+    "n_pairs": 254
+  },
+  "n_folds": 10,
+  "scenarios": {
+    "bm_scaffold": {
+      "base_fold_counts": {
+        "-1": 5188,
+        "0": 5178,
+        "1": 3029,
+        "2": 3029,
+        "3": 3029,
+        "4": 3029,
+        "5": 3029,
+        "6": 3029,
+        "7": 3029,
+        "8": 3029,
+        "9": 3029
+      },
+      "filename": "bm_scaffold_10fold.tsv",
+      "n_observations": 37627
+    },
+    "cc": {
+      "base_fold_counts": {
+        "0": 8899,
+        "1": 3175,
+        "2": 3201,
+        "3": 3188,
+        "4": 3194,
+        "5": 3201,
+        "6": 3174,
+        "7": 3192,
+        "8": 3201,
+        "9": 3202
+      },
+      "filename": "cc_10fold.tsv",
+      "n_observations": 37627
+    },
+    "random": {
+      "base_fold_counts": {
+        "0": 3830,
+        "1": 3820,
+        "2": 3809,
+        "3": 3788,
+        "4": 3768,
+        "5": 3750,
+        "6": 3736,
+        "7": 3721,
+        "8": 3711,
+        "9": 3694
+      },
+      "filename": "random_10fold.tsv",
+      "n_observations": 37627
+    }
+  },
+  "split_policy": {
+    "bm_scaffold_base_fold_-1": "always training",
+    "test": "base_fold == run index",
+    "training": "all remaining observations",
+    "validation": "base_fold == (run index + 1) mod n_folds"
+  }
+}
