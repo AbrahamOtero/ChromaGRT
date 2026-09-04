@@ -18,6 +18,8 @@ training.
 The curated dataset is distributed separately. It must preserve the three key
 columns above so that these assignments can be applied. `metadata.json` records
 the dataset release label, record counts, and splits.
+`cc_id_to_dir_id.tsv` provides the corresponding original RepoRT directory
+identifier for each curated chromatographic condition.
 
 To export a new manifest release from three full `master_manifest.csv` files run:
 
@@ -44,6 +46,6 @@ python -m src.benchmarks.shared_folds.build_assets_from_fold_manifest \
   --output-dir data/benchmarks/article-v1/random
 ```
 
-The resulting directory contains the ten ChromaGRT split directories , metadata, 
+The resulting directory contains the ten ChromaGRT split directories, metadata,
 and per-fold manifests. The command fails if any
 dataset row is absent from the fold manifest, or vice versa.
