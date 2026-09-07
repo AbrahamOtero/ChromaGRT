@@ -6,6 +6,111 @@ import pandas as pd
 
 from sklearn.preprocessing import StandardScaler
 
+
+FOLD_IMPUTATION_COLUMNS = (
+    "column.length",
+    "column.id",
+    "column.particle.size",
+    "column.temperature",
+    "column.flowrate",
+)
+T0_COLUMN = "column.t0"
+
+# The deterministic-normalization path receives train, validation, and test
+# tables in three separate calls.  The state is reset after both held-out
+# partitions have been processed, and each benchmark fold runs in its own
+# Python process.
+_deterministic_fold_imputer = None
+_deterministic_pending_splits = set()
+
+
+def _fit_fold_metadata_imputer(train_df):
+    """Fit numerical metadata means from one row per training condition."""
+    missing_columns = [column for column in FOLD_IMPUTATION_COLUMNS if column not in train_df]
+    if missing_columns:
+        raise ValueError(f"Missing chromatographic metadata columns: {missing_columns}")
+    if "cc_id" not in train_df:
+        raise ValueError("Fold-specific metadata imputation requires cc_id.")
+
+    condition_df = train_df.drop_duplicates(subset=["cc_id"])
+    means = {}
+    for column in FOLD_IMPUTATION_COLUMNS:
+        values = pd.to_numeric(condition_df[column], errors="coerce")
+        mean = values.mean(skipna=True)
+        if pd.isna(mean):
+            raise ValueError(
+                f"Cannot impute {column}: no observed value is available in the training conditions."
+            )
+        # Match the precision used by the existing global preprocessing route;
+        # only the rows contributing to the mean differ in the fold-specific route.
+        means[column] = round(float(mean), 2)
+    return means
+
+
+def _gradient_flow_columns(df):
+    """Yield populated-gradient time and flow-rate column pairs in index order."""
+    pairs = []
+    prefix = "flow rate [ml/min]_"
+    for flow_column in df.columns:
+        if not flow_column.startswith(prefix):
+            continue
+        index = flow_column.removeprefix(prefix)
+        time_column = f"t [min]_{index}"
+        if time_column in df.columns:
+            pairs.append((int(index), time_column, flow_column))
+    return [(time_column, flow_column) for _, time_column, flow_column in sorted(pairs)]
+
+
+def _apply_fold_metadata_imputer(df, means):
+    """Impute numerical metadata, gradient flow rates, and unavailable t0 values."""
+    final_df = df.copy()
+
+    for column, mean in means.items():
+        values = pd.to_numeric(final_df[column], errors="coerce")
+        missing = values.isna()
+        if missing.any():
+            final_df.loc[missing, column] = mean
+
+    for time_column, flow_column in _gradient_flow_columns(final_df):
+        times = pd.to_numeric(final_df[time_column], errors="coerce")
+        flows = pd.to_numeric(final_df[flow_column], errors="coerce")
+        needs_nominal_flow = times.notna() & (flows.isna() | (flows < 0))
+        if needs_nominal_flow.any():
+            final_df.loc[needs_nominal_flow, flow_column] = final_df.loc[
+                needs_nominal_flow, "column.flowrate"
+            ]
+
+    if T0_COLUMN in final_df.columns:
+        t0 = pd.to_numeric(final_df[T0_COLUMN], errors="coerce")
+        needs_proxy = t0.isna() | (t0 == 0)
+        if needs_proxy.any():
+            diameter = pd.to_numeric(final_df.loc[needs_proxy, "column.id"], errors="coerce")
+            length = pd.to_numeric(final_df.loc[needs_proxy, "column.length"], errors="coerce")
+            flow = pd.to_numeric(final_df.loc[needs_proxy, "column.flowrate"], errors="coerce")
+            if diameter.isna().any() or length.isna().any() or flow.isna().any() or (flow <= 0).any():
+                raise ValueError("Cannot calculate column.t0 after fold-specific metadata imputation.")
+            proxy = ((0.66 * np.pi * (diameter / 2) ** 2 * length / 10) / flow / 100).round(5)
+            final_df.loc[needs_proxy, T0_COLUMN] = proxy
+
+    unresolved = [
+        column
+        for column in (*FOLD_IMPUTATION_COLUMNS, T0_COLUMN)
+        if column in final_df and pd.to_numeric(final_df[column], errors="coerce").isna().any()
+    ]
+    if unresolved:
+        raise ValueError(f"Unresolved chromatographic metadata after fold-specific imputation: {unresolved}")
+
+    return final_df
+
+
+def _split_name(df):
+    """Return the unique split label carried by an article asset table, if any."""
+    if "split" not in df.columns:
+        return None
+    names = set(df["split"].dropna().astype(str).str.lower())
+    return next(iter(names)) if len(names) == 1 else None
+
+
 #DEFINE FUNCTIONS
 def add_moldescs (df, moldesc_path):
     """
@@ -56,6 +161,9 @@ def get_scaled_input_train_data (train_df):
     Input: The train set used for training a model.
     Output: the scaled train set and the Scaler
     """
+    fold_metadata_means = _fit_fold_metadata_imputer(train_df)
+    train_df = _apply_fold_metadata_imputer(train_df, fold_metadata_means)
+
     temp_list = []
     train_input_scaler = StandardScaler ()
     index_array = np.unique (train_df["cc_id"])
@@ -66,6 +174,7 @@ def get_scaled_input_train_data (train_df):
     temp_df = pd.concat(temp_list)
     input_data = temp_df.loc[:, "column.length":]
     train_input_scaler.fit (input_data) #This would be returned as output.
+    train_input_scaler._chromagrt_fold_metadata_means = fold_metadata_means
     position = train_df.columns.get_loc("column.length")
     columns_used = list(train_df.columns [position:])
     final_columns_used =  columns_used
@@ -78,6 +187,10 @@ def get_scaled_datasets (df, train_input_scaler):
     Used for scaling the input (metadata and gradient data) df using the train Scaler.
     In this context, this is used to get test and val data using train_input_scaler.
     """
+    fold_metadata_means = getattr(train_input_scaler, "_chromagrt_fold_metadata_means", None)
+    if fold_metadata_means is not None:
+        df = _apply_fold_metadata_imputer(df, fold_metadata_means)
+
     position = df.columns.get_loc("column.length")
     columns_used = list(df.columns[position:])
     final_columns_used =  columns_used
@@ -97,7 +210,22 @@ def get_deterministic_input_data(df):
     transformation is identical for training, validation, and test data and
     does not fit split-specific statistics.
     """
-    final_df = df.copy()
+    global _deterministic_fold_imputer, _deterministic_pending_splits
+
+    split = _split_name(df)
+    if split == "train":
+        _deterministic_fold_imputer = _fit_fold_metadata_imputer(df)
+        _deterministic_pending_splits = {"valid", "test"}
+        final_df = _apply_fold_metadata_imputer(df, _deterministic_fold_imputer)
+    elif split in {"valid", "test"}:
+        if _deterministic_fold_imputer is None:
+            raise RuntimeError(
+                "Deterministic fold-specific imputation requires the training split to be processed first."
+            )
+        final_df = _apply_fold_metadata_imputer(df, _deterministic_fold_imputer)
+        _deterministic_pending_splits.discard(split)
+    else:
+        final_df = df.copy()
 
     def numeric(column):
         return pd.to_numeric(final_df[column], errors="coerce").fillna(0.0)
@@ -115,6 +243,10 @@ def get_deterministic_input_data(df):
             final_df[column] = numeric(column) / 14.0
         elif column.startswith("eluent."):
             final_df[column] = (numeric(column) != 0.0).astype(float)
+
+    if split in {"valid", "test"} and not _deterministic_pending_splits:
+        _deterministic_fold_imputer = None
+        _deterministic_pending_splits = set()
 
     return final_df
 
