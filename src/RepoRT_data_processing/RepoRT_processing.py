@@ -740,7 +740,17 @@ def _get_processed_grad_df (grad_df,
     grad_df = _drop_grad_data_by_up_threshold(grad_df,rt_df, path2dir)
 
     grad_df = _drop_gradient_data_columns(grad_df)
+    missing_populated_flow_rates = {}
+    for flow_column in [column for column in grad_df.columns if "flow rate [ml/min]" in column]:
+        index = flow_column.rsplit("_", 1)[-1]
+        time_column = f"t [min]_{index}"
+        if time_column in grad_df:
+            missing_populated_flow_rates[flow_column] = (
+                grad_df[time_column].notna() & grad_df[flow_column].isna()
+            )
     grad_df = grad_df.fillna(0)
+    for flow_column, missing in missing_populated_flow_rates.items():
+        grad_df.loc[missing, flow_column] = np.nan
 
 
     path2file = os.path.join(path2dir, "processed_grad_data.tsv")

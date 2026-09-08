@@ -39,6 +39,7 @@ import npscorer
 #PARAMETERS
 SMRT_DIR_ID = "0186"
 NPLS_THRESHOLD = np.float64(-0.6)
+IMPUTE_MISSING_COLUMN_METADATA = False
 
 
 # HELPER FUNCTIONS
@@ -246,6 +247,9 @@ def _process_column_data (df):
         2. With all the NA vals of the metadata filled, the t0 for those columns will be inferred:
                             t0 = V0 / F = 0.66*Vcolumn / Flow_rate
     """
+    if not IMPUTE_MISSING_COLUMN_METADATA:
+        return df
+
     #Get a smaller df for faster iteration. The id column is not used.
     temp_df = df.loc [:, "column.name":"column.flowrate"]
     # Create a dictionary with the column names as keys and the GLOBAL MEANS as the values.
