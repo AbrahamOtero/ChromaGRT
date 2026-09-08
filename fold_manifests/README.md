@@ -3,6 +3,10 @@
 `article-v1` contains the exact base-fold assignments used for the curated
 RepoRT reversed-phase no-SMRT dataset with Tanaka descriptors.
 
+These manifests are intended to be reused unchanged by any compatible
+retention-time model, so that independently reported metrics use the same
+training, validation, and test observations as the article benchmarks.
+
 Each TSV has one row per observation and these columns:
 
 ```text
@@ -15,8 +19,8 @@ with `base_fold == k` form the test set; rows with
 the training set. In the Bemis--Murcko scenario, `base_fold == -1` (no scaffold) is always in
 training.
 
-The curated dataset is distributed separately. It must preserve the three key
-columns above so that these assignments can be applied. `metadata.json` records
+The curated dataset is distributed separately. It must preserve cc_id, molecule_id and inchi.std
+so that these assignments can be applied. `metadata.json` records
 the dataset release label, record counts, and splits.
 `cc_id_to_dir_id.tsv` provides the corresponding original RepoRT directory
 identifier for each curated chromatographic condition.
@@ -24,7 +28,8 @@ identifier for each curated chromatographic condition.
 To export a new manifest release from three full `master_manifest.csv` files run:
 
 ```bash
-python -m src.benchmarks.shared_folds.export_fold_manifests \
+conda run --no-capture-output -n chromagrt \
+  python -m src.benchmarks.shared_folds.export_fold_manifests \
   --random-master /path/to/random/master_manifest.csv \
   --bm-master /path/to/bm_scaffold/master_manifest.csv \
   --cc-master /path/to/cc/master_manifest.csv \
@@ -32,11 +37,12 @@ python -m src.benchmarks.shared_folds.export_fold_manifests \
   --dataset-version article-v2
 ```
 
-To rebuild the training assets for one scenario from the 
+To rebuild the training assets for one scenario from the
 curated data, apply the manifest rather than recalculating folds:
 
 ```bash
-python -m src.benchmarks.shared_folds.build_assets_from_fold_manifest \
+conda run --no-capture-output -n chromagrt \
+  python -m src.benchmarks.shared_folds.build_assets_from_fold_manifest \
   --scenario random \
   --input-path /path/to/complete_processed_data_with_tanaka.tsv \
   --fold-manifest fold_manifests/article-v1/random_10fold.tsv \
@@ -47,5 +53,7 @@ python -m src.benchmarks.shared_folds.build_assets_from_fold_manifest \
 ```
 
 The resulting directory contains the ten ChromaGRT split directories, metadata,
-and per-fold manifests. The command fails if any
+and per-fold manifests. Its generated split tables and master manifest retain
+the `cc_id`, `molecule_id`, and `inchi.std` identifiers for every observation.
+The command fails if any
 dataset row is absent from the fold manifest, or vice versa.
