@@ -257,7 +257,7 @@ def main(argv: list[str] | None = None) -> None:
                 "repo_ids": ARTICLE_REPO_IDS,
                 "variants": variants,
                 "article_curated_tanaka": str(ARTICLE_CURATED_TANAKA_PATH),
-                "molecular_descriptors": None if args.skip_molecular_descriptors else str(descriptor_path),
+                "molecular_descriptors": str(descriptor_path),
                 "fold_manifest_dir": str(_project_root() / ARTICLE_FOLD_MANIFEST_RELATIVE_PATH),
                 "article_assets": assets,
             },

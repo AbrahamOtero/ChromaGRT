@@ -39,7 +39,6 @@ import npscorer
 #PARAMETERS
 SMRT_DIR_ID = "0186"
 NPLS_THRESHOLD = np.float64(-0.6)
-IMPUTE_MISSING_COLUMN_METADATA = False
 
 
 # HELPER FUNCTIONS
@@ -72,15 +71,6 @@ def _get_molecule_name (column_name):
     """
     molecule = column_name.split(".")[2]
     return str(molecule)
-
-def _infer_t0_val (diameter, length, fr):
-    """
-        Used for inferring the t0. Here t0 is calculated as V0/T.
-        In RepoRT, inner diameter is given in cm, length in mm and fr in mL/min.
-        So we have to pass length (mm) to cm.
-    """
-    base_area = np.pi * (diameter / 2)**2
-    return round(((0.66*base_area*length/10)/fr)/100, 5)
 
 # RT data preprocessing functions
 def _get_npls_scored_df (df) -> pd.DataFrame:
@@ -211,7 +201,7 @@ def preprocess_rp_dataset(raw_root,
     )
     preprocessed_grad_df = _preprocess_grad_data(
         grad_df=grad_df,
-        imputed_cc_df=preprocessed_cc_df,
+        preprocessed_cc_df=preprocessed_cc_df,
         path2dir=output_dir,
     )
 
@@ -238,44 +228,6 @@ def preprocess_rp_dataset(raw_root,
     return complete_df
 
 # CC DATA PREPROCESSING
-
-def _process_column_data (df):
-    """
-    Processes a raw RepoRT metadata tsv file.
-    The processing consists in:
-        1. Fill all NA values with the global mean, but the column.t0 value.
-        2. With all the NA vals of the metadata filled, the t0 for those columns will be inferred:
-                            t0 = V0 / F = 0.66*Vcolumn / Flow_rate
-    """
-    if not IMPUTE_MISSING_COLUMN_METADATA:
-        return df
-
-    #Get a smaller df for faster iteration. The id column is not used.
-    temp_df = df.loc [:, "column.name":"column.flowrate"]
-    # Create a dictionary with the column names as keys and the GLOBAL MEANS as the values.
-    means_dict = {column : round(temp_df[column].mean(), 2) for column in temp_df.columns [2:]}
-
-    #The updating process
-    for index,row in temp_df.iterrows():
-        for column in temp_df.columns [2:]:
-            if pd.isnull(row[column]) :
-                # If the NAME AND THE COLUMN value BOTH MISSING.
-                temp_df.loc[index,column] = means_dict[column] #Global mean used
-            else:
-                continue
-    # Update the df
-    df.update (temp_df)
-    #Updating t0 value
-
-    for index, row in df.iterrows():
-        if row["column.t0"]==0:
-            temp_t0 = _infer_t0_val(np.float64(row["column.id"]),
-                                   np.float64(row["column.length"]),
-                                   np.float64(row["column.flowrate"]))
-            df.loc[index, "column.t0"] = temp_t0
-        else:
-            continue
-    return df #This df contains the updated column metadata
 
 def _process_eluent_unit (df):
     """
@@ -357,7 +309,6 @@ def _obtain_preprocessed_cc_data(cc_df,
 
     print("Preprocessing cc data...")
 
-    cc_df = _process_column_data(cc_df)
     cc_df= _process_eluent_unit(cc_df)
     cc_df = _get_one_hot_encoded_df(cc_df)
     filled_df = cc_df.loc [:, "eluent.A.h2o":].fillna(0)
@@ -381,11 +332,11 @@ def _need_update (time_col, fr_col):
 
 
 def _preprocess_grad_data (grad_df,
-                           imputed_cc_df,
+                           preprocessed_cc_df,
                            path2dir,
                            filename="preprocessed_gradient_data.tsv"):
     """
-        Update the flow rate colum with the imputed flow rate value.
+        Update the flow rate column with the corresponding column flow rate.
         Transforms the time from minutes to seconds.
     """
     print("Preprocessing the gradient data...")
@@ -396,7 +347,7 @@ def _preprocess_grad_data (grad_df,
     grad_df [grad_fr_array] = grad_df[grad_fr_array].apply(pd.to_numeric, errors='coerce')
     for index, row in grad_df.iterrows():
         dir_id = row ["dir_id"]
-        fr = imputed_cc_df[imputed_cc_df["dir_id"] == dir_id].loc[:,"column.flowrate"].values[0]
+        fr = preprocessed_cc_df[preprocessed_cc_df["dir_id"] == dir_id].loc[:,"column.flowrate"].values[0]
         for grad_time, grad_fr in zip(grad_time_array, grad_fr_array):
             temp_grad_time_val = row[grad_time]
             temp_grad_fr_val = row[grad_fr]
