@@ -3,7 +3,7 @@
 `article-v1` contains the exact base-fold assignments used for the curated
 RepoRT reversed-phase no-SMRT dataset with Tanaka descriptors.
 
-These manifests are intended to be reused unchanged by any compatible
+These manifests are intended to be reused unchanged by a
 retention-time model, so that independently reported metrics use the same
 training, validation, and test observations as the article benchmarks.
 
@@ -20,7 +20,11 @@ the training set. In the Bemis--Murcko scenario, `base_fold == -1` (no scaffold)
 training.
 
 The curated dataset is distributed separately. It must preserve cc_id, molecule_id and inchi.std
-so that these assignments can be applied. `metadata.json` records
+so that these assignments can be applied. The curated article data are available
+from the Zenodo release described in the [repository-root README](../README.md).
+Alternatively, rebuild them locally with `src.RepoRT_data_processing.prepare_reportrp`.
+
+`metadata.json` records
 the dataset release label, record counts, and splits.
 `cc_id_to_dir_id.tsv` provides the corresponding original RepoRT directory
 identifier for each curated chromatographic condition.

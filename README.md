@@ -8,8 +8,7 @@ the gradient program. It is incorporated as a global graph node and through
 feature-wise linear modulation (FiLM).
 
 This repository contains the code used for the ChromaGRT experiments and the
-GraphormerRT comparison. Generated datasets, trained models, experiment logs,
-and the article sources are intentionally not versioned. A complete, immutable
+GraphormerRT comparison.  A complete, immutable
 release of the curated ChromaGRT data is available through Zenodo.
 
 ## Repository layout
@@ -62,7 +61,7 @@ fallback descriptors.
 ## Optional: rebuild the RepoRT RP data pipeline locally
 
 Skip this section if you have downloaded and extracted the Zenodo release.
-Local reconstruction can be slow. Downloading RepoRT requires substantial
+Local reconstruction can be slow. Downloading RepoRT can require substantial
 time, and the subsequent PubChem queries require even more
 time because they are performed for individual molecular descriptors. The
 query volume can also trigger PubChem API rate limiting or temporary blocking.
@@ -80,7 +79,7 @@ conda run --no-capture-output -n chromagrt \
 
 That command:
 
-- Downloads RepoRT.
+- Downloads RepoRT at Git revision `35b1bb689b310a2281f10efdcce223bb0007d74b`.
 - Builds the no-SMRT, NPLS-filtered SMRT, and unfiltered SMRT dataset variants.
 - Preprocesses retention times, column metadata, and gradient programs.
 - Groups equivalent chromatographic conditions, resolves duplicate observations,
@@ -106,7 +105,7 @@ placed under `<data-root>/RepoRT/raw_data` and
 `<data-root>/RepoRT_RP/raw_data`, where `<data-root>` is the default `data/`
 directory or the path supplied with `--data-root`.
 
-## Train models from prepared data
+## Train models
 
 The following commands work once the data are available, whether they came
 from the Zenodo release or from a local reconstruction. Set `DATA_ROOT` to the

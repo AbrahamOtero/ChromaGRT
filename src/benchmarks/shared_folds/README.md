@@ -17,7 +17,7 @@ The exact, versioned article assignments are in
 observation through `cc_id`, `molecule_id`, and `inchi.std`, and assigns it a
 `base_fold`.
 
-The three no-SMRT scenarios are:
+The three scenarios are:
 
 ```text
 random       Random partition of the curated observations.
@@ -66,8 +66,8 @@ source of truth for the assignment.
 
 To prepare inputs for another model:
 
-1. Select one of the three scenarios above and use the matching
-   `article-v1` manifest.
+1. Select `random`, `bm_scaffold`, or `cc`, and use the matching `article-v1`
+   manifest.
 2. Map the model's input data to the manifest using the three observation keys
    (`cc_id`, `molecule_id`, and `inchi.std`).
 3. Construct each run's train, validation, and test data with the split rule
@@ -120,6 +120,7 @@ one chromatographic block. Pass
 descriptors. For example:
 
 ```bash
+SPLITS=data/benchmarks/article-v1/random/chromagrt_splits
 CHROMAGRT_SHARED_RESULTS_ROOT=logs/benchmarks/no_composition \
   src/benchmarks/shared_folds/scripts/run_chromagrt_kfold.sh "$SPLITS" \
   --exclude-condition-blocks composition
