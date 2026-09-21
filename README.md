@@ -9,7 +9,8 @@ feature-wise linear modulation (FiLM).
 
 This repository contains the code used for the ChromaGRT experiments and the
 GraphormerRT comparison.  A complete, immutable
-release of the curated ChromaGRT data is available through Zenodo.
+release of the curated ChromaGRT data is available through
+[Zenodo (DOI: 10.5281/zenodo.22305395)](https://doi.org/10.5281/zenodo.22305395).
 
 ## Repository layout
 
@@ -22,7 +23,7 @@ release of the curated ChromaGRT data is available through Zenodo.
 - `fold_manifests`: exact article fold assignments, versioned independently of
   the separately distributed curated dataset.
 - `src/benchmarks/graphormer_rt`: GraphormerRT adapter and local copy of the
-  upstream code.
+  upstream code for comparative benchmark.
 
 ## ChromaGRT environment
 
@@ -40,7 +41,8 @@ Fairseq dependencies; see the [GraphormerRT README](src/benchmarks/graphormer_rt
 
 The Zenodo release provides the complete curated datasets required to train
 ChromaGRT directly. Download `chromagrt_article_curated_data_v1.zip` from the
-Zenodo release and extract it at the repository root:
+[Zenodo release (DOI: 10.5281/zenodo.22305395)](https://doi.org/10.5281/zenodo.22305395)
+and extract it at the repository root:
 
 ```bash
 unzip chromagrt_article_curated_data_v1.zip
@@ -118,10 +120,13 @@ DATA_ROOT=data                              # Zenodo archive extracted at the re
 
 ### ChromaGRT
 
-The default configuration uses dropout 0.05, Tanaka descriptors, MAE optimization with AdamW
-(`lr=5e-5`, `weight_decay=0.01`), validation-MAE checkpointing, early stopping
-with patience 30, seed 42, and a maximum of 250 epochs. To inspect the current
-configuration without training:
+The default configuration uses dropout 0.05, Tanaka descriptors, and AdamW
+(`weight_decay=0.01`) with an initial learning rate of `5e-5`.
+`ReduceLROnPlateau` monitors validation MAE with a reduction factor of 0.5,
+patience 10, and a minimum learning rate of `1e-6`.
+Validation-MAE checkpointing, early stopping with patience 30, seed 42, and a
+maximum of 250 epochs are used. To inspect the current configuration without
+training:
 
 ```bash
 python -m src.training.RepoRT.predefined_split.main --print-config
