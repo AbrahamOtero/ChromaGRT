@@ -11,6 +11,9 @@ from src.training.model_backends.chromagrt_defaults import (
     MAX_DISTANCE,
     NUM_HEADS,
     NUM_LAYERS,
+    PLATEAU_COOLDOWN,
+    PLATEAU_THRESHOLD,
+    PLATEAU_THRESHOLD_MODE,
     WEIGHT_DECAY,
 )
 
@@ -95,11 +98,32 @@ class ChromaGRTRegressor(pl.LightningModule):
         )
 
     def configure_optimizers(self):
-        return torch.optim.AdamW(
+        optimizer = torch.optim.AdamW(
             self.parameters(),
             lr=self.config["lr"],
             weight_decay=WEIGHT_DECAY,
         )
+        scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
+            optimizer,
+            mode="min",
+            factor=self.config["plateau_factor"],
+            patience=self.config["plateau_patience"],
+            threshold=PLATEAU_THRESHOLD,
+            threshold_mode=PLATEAU_THRESHOLD_MODE,
+            cooldown=PLATEAU_COOLDOWN,
+            min_lr=self.config["plateau_min_lr"],
+        )
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "monitor": "val_mae",
+                "interval": "epoch",
+                "frequency": 1,
+                "strict": True,
+                "name": "plateau_val_mae",
+            },
+        }
 
     def _node_features(self, batch):
         return (

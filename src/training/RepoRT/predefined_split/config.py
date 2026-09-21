@@ -121,7 +121,27 @@ def build_parser() -> argparse.ArgumentParser:
     model.add_argument("--dropout", type=float, default=_env_float("CHROMAGRT_DROPOUT", defaults["dropout"]))
 
     training = parser.add_argument_group("optimization")
-    training.add_argument("--lr", type=float, default=_env_float("CHROMAGRT_LR", defaults["lr"]))
+    training.add_argument(
+        "--lr",
+        type=float,
+        default=_env_float("CHROMAGRT_LR", defaults["lr"]),
+        help="Initial learning rate for ReduceLROnPlateau.",
+    )
+    training.add_argument(
+        "--plateau-factor",
+        type=float,
+        default=_env_float("CHROMAGRT_PLATEAU_FACTOR", defaults["plateau_factor"]),
+    )
+    training.add_argument(
+        "--plateau-patience",
+        type=int,
+        default=_env_int("CHROMAGRT_PLATEAU_PATIENCE", defaults["plateau_patience"]),
+    )
+    training.add_argument(
+        "--plateau-min-lr",
+        type=float,
+        default=_env_float("CHROMAGRT_PLATEAU_MIN_LR", defaults["plateau_min_lr"]),
+    )
     training.add_argument("--max-epochs", type=int, default=_env_int("CHROMAGRT_MAX_EPOCHS", defaults["max_epochs"]))
     training.add_argument("--seed", type=int, default=_env_int("CHROMAGRT_SEED", defaults["seed"]))
     training.add_argument("--accelerator", default=os.environ.get("CHROMAGRT_ACCELERATOR", defaults["accelerator"]))
@@ -129,8 +149,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def model_config_from_args(args: argparse.Namespace) -> dict:
-    keys = tuple(PAPER_CHROMAGRT_DEFAULTS)
-    return {key: getattr(args, key) for key in keys}
+    config = PAPER_CHROMAGRT_DEFAULTS.copy()
+    for key in config:
+        if hasattr(args, key):
+            config[key] = getattr(args, key)
+    return config
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -144,4 +167,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     unknown = set(args.excluded_molecular_descriptors) - supported_descriptors
     if unknown:
         parser.error(f"unsupported molecular descriptors: {', '.join(sorted(unknown))}")
+    if not 0.0 < args.plateau_factor < 1.0:
+        parser.error("--plateau-factor must be between 0 and 1")
+    if args.plateau_patience < 0:
+        parser.error("--plateau-patience must be non-negative")
+    if args.plateau_min_lr < 0.0:
+        parser.error("--plateau-min-lr must be non-negative")
     return args

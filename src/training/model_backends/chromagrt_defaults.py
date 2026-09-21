@@ -8,6 +8,9 @@ FFN_DIM = 512
 MAX_DISTANCE = 8
 WEIGHT_DECAY = 1e-2
 EARLY_STOPPING_PATIENCE = 30
+PLATEAU_THRESHOLD = 0.0
+PLATEAU_THRESHOLD_MODE = "abs"
+PLATEAU_COOLDOWN = 0
 
 
 DEFAULT_CHROMAGRT_CONFIG = {
@@ -18,8 +21,15 @@ DEFAULT_CHROMAGRT_CONFIG = {
     "excluded_condition_blocks": (),
     "excluded_molecular_descriptors": (),
     "dropout": 0.05,
-    
+
     "lr": 5e-5,
+    "lr_scheduler": "ReduceLROnPlateau",
+    "plateau_factor": 0.5,
+    "plateau_patience": 10,
+    "plateau_min_lr": 1e-6,
+    "plateau_threshold": PLATEAU_THRESHOLD,
+    "plateau_threshold_mode": PLATEAU_THRESHOLD_MODE,
+    "plateau_cooldown": PLATEAU_COOLDOWN,
     "max_epochs": 250,
     "seed": 42,
     "accelerator": "auto",

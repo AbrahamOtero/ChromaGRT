@@ -106,11 +106,13 @@ src/benchmarks/shared_folds/scripts/run_chromagrt_kfold.sh \
   --condition-normalization deterministic --dropout 0.15 --no-use-tanaka
 ```
 
-The launcher trains the ten folds and writes a summary
-when all runs finish. The default configuration uses training-fold
-normalization, dropout 0.05, Tanaka descriptors, AdamW (`lr=5e-5`,
-`weight_decay=0.01`), MAE monitoring, patience 30, seed 42, and a maximum of
-250 epochs.
+The launcher trains the ten folds and writes a summary when all runs finish.
+The default configuration uses training-fold normalization, dropout 0.05,
+Tanaka descriptors, and AdamW (`weight_decay=0.01`) with an initial learning
+rate of `5e-5`. `ReduceLROnPlateau` monitors validation MAE with a reduction
+factor of 0.5, patience 10, and a minimum learning rate of `1e-6`. Early
+stopping also monitors validation MAE with patience 30. The seed is 42 and the
+maximum number of epochs is 250.
 
 ### Input ablations
 
