@@ -92,6 +92,10 @@ def _graphormer_rt_gradient_block(grad_row: pd.Series) -> list[str]:
             inflections.append(points[idx])
             inflections = list(set(inflections))
 
+    # GraphormerRT expects the retained time--composition points in temporal
+    # order.  Deduplication through a set does not preserve that order.
+    inflections.sort(key=lambda point: point[0])
+
     values = [_as_graphormer_rt_number(points[0][0]), _as_graphormer_rt_number(points[0][1])]
     previous_time = -1.0
     count = 0
@@ -102,6 +106,12 @@ def _graphormer_rt_gradient_block(grad_row: pd.Series) -> list[str]:
             continue
         previous_time = time
         count += 1
+
+    if any(
+        inflections[index][0] > inflections[index + 1][0]
+        for index in range(len(inflections) - 1)
+    ):
+        raise ValueError("GraphormerRT gradient points are not chronologically ordered")
 
     for time, percent_b in inflections:
         values.extend([_as_graphormer_rt_number(time), _as_graphormer_rt_number(percent_b)])
