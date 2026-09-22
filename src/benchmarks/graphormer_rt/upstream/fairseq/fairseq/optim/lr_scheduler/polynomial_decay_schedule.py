@@ -33,6 +33,18 @@ class PolynomialDecayLRScheduleConfig(FairseqDataclass):
         default=II("optimization.max_update"),
         metadata={"help": "total number of updates over which to decay learning rate"},
     )
+    scale_to_max_epoch: bool = field(
+        default=False,
+        metadata={
+            "help": "derive warmup and total updates from the training iterator and max epoch"
+        },
+    )
+    warmup_ratio: float = field(
+        default=0.15,
+        metadata={
+            "help": "fraction of the fold-scaled update schedule used for warmup"
+        },
+    )
     lr: List[float] = II("optimization.lr")
 
 
@@ -54,6 +66,26 @@ class PolynomialDecayLRSchedule(FairseqLRScheduler):
         self.total_num_update = cfg.total_num_update
         self.power = cfg.power
         self.optimizer.set_lr(self.warmup_factor * self.lr)
+
+    def reconfigure_schedule(self, warmup_updates, total_num_update, num_updates=0):
+        """Replace the update budget before training or after resuming."""
+        warmup_updates = int(warmup_updates)
+        total_num_update = int(total_num_update)
+        num_updates = int(num_updates)
+        if total_num_update <= 0:
+            raise ValueError("total_num_update must be positive")
+        if not 0 <= warmup_updates < total_num_update:
+            raise ValueError(
+                "warmup_updates must satisfy 0 <= warmup_updates < total_num_update"
+            )
+        if num_updates < 0:
+            raise ValueError("num_updates must be non-negative")
+
+        self.cfg.warmup_updates = warmup_updates
+        self.cfg.total_num_update = total_num_update
+        self.total_num_update = total_num_update
+        self.warmup_factor = 1.0 / warmup_updates if warmup_updates > 0 else 1.0
+        return self.step_update(num_updates)
 
     def get_next_lr(self, epoch):
         lrs = self.cfg.lr

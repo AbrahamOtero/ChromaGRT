@@ -729,6 +729,12 @@ class CheckpointConfig(FairseqDataclass):
             )
         },
     )
+    patience_after_warmup: bool = field(
+        default=False,
+        metadata={
+            "help": "count early-stopping validation failures only after LR warmup"
+        },
+    )
     checkpoint_suffix: str = field(
         default="", metadata={"help": "suffix to add to the checkpoint file name"}
     )

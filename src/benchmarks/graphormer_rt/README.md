@@ -1,9 +1,10 @@
 # GraphormerRT comparison
 
-`upstream/` contains a local copy of the original
-[Graphormer-RT](https://github.com/HopkinsLaboratory/Graphormer-RT). The files
-outside that directory adapt its reversed-phase workflow to the data
-reconstructed by this project.
+`upstream/` is based on the original
+[Graphormer-RT](https://github.com/HopkinsLaboratory/Graphormer-RT). The data
+loaders and launchers adapt its reversed-phase workflow to the data
+reconstructed by this project. The local Fairseq training loop also scales the
+polynomial learning-rate schedule to each fold.
 
 GraphormerRT is not part of the ChromaGRT environment or the ChromaGRT Zenodo
 data archive. It requires a separate Python 3.9 environment with the upstream
@@ -43,6 +44,9 @@ Replace `cc` with `random` or `bm_scaffold` for the other article scenarios.
 The metadata builder writes one `RP_metadata.pickle` per fold. The launcher uses
 the resulting fold-specific metadata for both training and evaluation. It
 trains one model per fold, and writes aggregate metrics to its result directory.
+The polynomial schedule uses 15% of the 250-epoch update budget for warm-up.
+Validation and best-checkpoint selection run throughout training; the
+30-validation early-stopping patience is counted only after warm-up.
 
 Shared-fold definitions and the protocol for comparing another model on the
 same test observations are documented in

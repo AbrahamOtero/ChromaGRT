@@ -32,7 +32,13 @@ from fairseq.models import FairseqDecoder, FairseqEncoder
 logger = logging.getLogger(__name__)
 
 
-def save_checkpoint(cfg: CheckpointConfig, trainer, epoch_itr, val_loss):
+def save_checkpoint(
+    cfg: CheckpointConfig,
+    trainer,
+    epoch_itr,
+    val_loss,
+    additional_state: Optional[Dict[str, Any]] = None,
+):
     from fairseq import meters
 
     # only one worker should attempt to create the required dir
@@ -107,6 +113,14 @@ def save_checkpoint(cfg: CheckpointConfig, trainer, epoch_itr, val_loss):
     extra_state = {"train_iterator": epoch_itr.state_dict(), "val_loss": val_loss}
     if hasattr(save_checkpoint, "best"):
         extra_state.update({"best": save_checkpoint.best})
+    if additional_state:
+        duplicate_keys = set(extra_state).intersection(additional_state)
+        if duplicate_keys:
+            raise ValueError(
+                "Additional checkpoint state duplicates reserved keys: "
+                f"{sorted(duplicate_keys)}"
+            )
+        extra_state.update(additional_state)
 
     checkpoints = [
         os.path.join(cfg.save_dir, fn) for fn, cond in checkpoint_conds.items() if cond

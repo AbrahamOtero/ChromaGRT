@@ -47,7 +47,9 @@ if [ -n "${PYTHON_CUDA_LIB_PATHS}" ]; then
     export LD_LIBRARY_PATH="$(printf '%s\n' "${PYTHON_CUDA_LIB_PATHS}" | paste -sd: -)${LD_LIBRARY_PATH:+:${LD_LIBRARY_PATH}}"
 fi
 
-fairseq-train \
+export PYTHONPATH="${UPSTREAM_DIR}/fairseq:${UPSTREAM_DIR}${PYTHONPATH:+:${PYTHONPATH}}"
+
+python -m fairseq_cli.train \
     --user-dir ../../graphormer \
     --batch-size 64 \
     --num-workers "${GRAPHORMER_RT_NUM_WORKERS:-16}" \
@@ -61,7 +63,8 @@ fairseq-train \
     --num-classes 1 \
     --attention-dropout 0.15 --act-dropout 0.10 --dropout 0.10 \
     --optimizer adam --adam-betas '(0.9, 0.999)' --adam-eps 1e-8 --clip-norm 5.0 --weight-decay 0.01 \
-    --lr-scheduler polynomial_decay --power 1 --warmup-updates "${GRAPHORMER_RT_WARMUP_UPDATES:-33281}" --total-num-update "${GRAPHORMER_RT_TOTAL_UPDATES:-221875}" \
+    --lr-scheduler polynomial_decay --power 1 --warmup-updates 33281 --total-num-update 221875 \
+    --scale-to-max-epoch --warmup-ratio 0.15 \
     --lr "${GRAPHORMER_RT_LR:-1e-4}" \
     --fp16 \
     --encoder-layers 8 \
@@ -72,6 +75,7 @@ fairseq-train \
     --mlp-layers 5 \
     --max-epoch "${GRAPHORMER_RT_MAX_EPOCH:-250}" \
     --patience "${GRAPHORMER_RT_PATIENCE:-30}" \
+    --patience-after-warmup \
     --no-epoch-checkpoints \
     --freeze-level 0 \
     --save-dir "${SAVE_DIR}"

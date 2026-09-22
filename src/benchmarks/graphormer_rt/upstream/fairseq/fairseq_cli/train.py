@@ -8,6 +8,7 @@ Train a new model on one or across multiple GPUs.
 """
 
 import argparse
+from dataclasses import dataclass
 import logging
 import math
 import os
@@ -25,7 +26,7 @@ logger = logging.getLogger("fairseq_cli.train")
 
 import numpy as np
 import torch
-from omegaconf import DictConfig, OmegaConf
+from omegaconf import DictConfig, OmegaConf, open_dict
 
 from fairseq import checkpoint_utils, options, quantization_utils, tasks, utils
 from fairseq.data import data_utils, iterators
@@ -38,6 +39,135 @@ from fairseq.file_io import PathManager
 from fairseq.logging import meters, metrics, progress_bar
 from fairseq.model_parallel.megatron_trainer import MegatronTrainer
 from fairseq.trainer import Trainer
+
+
+@dataclass
+class EarlyStoppingState:
+    best: Optional[float] = None
+    num_runs: int = 0
+
+    def state_dict(self) -> Dict[str, Any]:
+        return {"best": self.best, "num_runs": self.num_runs}
+
+    @classmethod
+    def from_checkpoint(
+        cls, cfg: DictConfig, extra_state: Optional[Dict[str, Any]]
+    ) -> "EarlyStoppingState":
+        if extra_state is None or cfg.checkpoint.reset_optimizer or cfg.checkpoint.reset_meters:
+            return cls()
+        saved_state = extra_state.get("early_stopping")
+        if saved_state is not None:
+            return cls(
+                best=saved_state.get("best"),
+                num_runs=int(saved_state.get("num_runs", 0)),
+            )
+        if cfg.checkpoint.patience_after_warmup:
+            logger.warning(
+                "Checkpoint has no early-stopping state; restoring its best "
+                "validation score and resetting the patience counter"
+            )
+        return cls(best=extra_state.get("best"), num_runs=0)
+
+
+def _updates_for_epoch(num_batches: int, update_freq: int, skip_remainder: bool) -> int:
+    if num_batches <= 0:
+        raise ValueError("The training iterator must contain at least one batch")
+    if update_freq <= 0:
+        raise ValueError("update_freq must be positive")
+    if skip_remainder:
+        updates = num_batches // update_freq
+    else:
+        updates = math.ceil(num_batches / update_freq)
+    if updates <= 0:
+        raise ValueError("The configured update frequency drops every training batch")
+    return updates
+
+
+def _fold_scaled_schedule(
+    num_batches: int,
+    update_freq: List[int],
+    max_epoch: int,
+    warmup_ratio: float,
+    skip_remainder: bool = False,
+) -> Tuple[int, int]:
+    if max_epoch <= 0:
+        raise ValueError("max_epoch must be positive for a fold-scaled LR schedule")
+    if not update_freq:
+        raise ValueError("At least one update_freq value is required")
+    if not 0 <= warmup_ratio < 1:
+        raise ValueError("warmup_ratio must satisfy 0 <= warmup_ratio < 1")
+
+    total_updates = 0
+    for epoch in range(max_epoch):
+        frequency = update_freq[min(epoch, len(update_freq) - 1)]
+        total_updates += _updates_for_epoch(
+            num_batches, frequency, skip_remainder
+        )
+    warmup_updates = round(warmup_ratio * total_updates)
+    if warmup_updates >= total_updates:
+        raise ValueError("Fold-scaled warmup must end before the update schedule")
+    return int(warmup_updates), int(total_updates)
+
+
+def _configure_fold_scaled_schedule(
+    cfg: DictConfig, trainer: Trainer, epoch_itr
+) -> Optional[Tuple[int, int]]:
+    if not getattr(cfg.lr_scheduler, "scale_to_max_epoch", False):
+        return None
+    if cfg.lr_scheduler._name != "polynomial_decay":
+        raise ValueError(
+            "--scale-to-max-epoch is supported only by polynomial_decay"
+        )
+    if not hasattr(trainer.lr_scheduler, "reconfigure_schedule"):
+        raise TypeError("The selected LR scheduler cannot be reconfigured")
+
+    max_epoch = cfg.optimization.max_epoch
+    if max_epoch is None:
+        raise ValueError("--scale-to-max-epoch requires --max-epoch")
+    warmup_updates, total_updates = _fold_scaled_schedule(
+        num_batches=len(epoch_itr),
+        update_freq=list(cfg.optimization.update_freq),
+        max_epoch=int(max_epoch),
+        warmup_ratio=float(cfg.lr_scheduler.warmup_ratio),
+        skip_remainder=bool(cfg.optimization.skip_remainder_batch),
+    )
+    trainer.lr_scheduler.reconfigure_schedule(
+        warmup_updates=warmup_updates,
+        total_num_update=total_updates,
+        num_updates=trainer.get_num_updates(),
+    )
+    if OmegaConf.is_config(cfg.lr_scheduler):
+        with open_dict(cfg.lr_scheduler):
+            cfg.lr_scheduler.warmup_updates = warmup_updates
+            cfg.lr_scheduler.total_num_update = total_updates
+    else:
+        cfg.lr_scheduler.warmup_updates = warmup_updates
+        cfg.lr_scheduler.total_num_update = total_updates
+
+    scheduler_warmup = int(trainer.lr_scheduler.cfg.warmup_updates)
+    scheduler_total = int(trainer.lr_scheduler.cfg.total_num_update)
+    configured_warmup = int(cfg.lr_scheduler.warmup_updates)
+    configured_total = int(cfg.lr_scheduler.total_num_update)
+    if (scheduler_warmup, scheduler_total) != (
+        configured_warmup,
+        configured_total,
+    ):
+        raise RuntimeError(
+            "The effective LR schedule differs between the scheduler and "
+            "the training configuration"
+        )
+    logger.info(
+        "fold-scaled polynomial LR schedule: batches_per_epoch=%d, "
+        "max_epoch=%d, total_num_update=%d, warmup_updates=%d, "
+        "warmup_ratio=%.6f, warmup_epochs=%.3f",
+        len(epoch_itr),
+        max_epoch,
+        total_updates,
+        warmup_updates,
+        float(cfg.lr_scheduler.warmup_ratio),
+        warmup_updates * max_epoch / total_updates,
+    )
+    return warmup_updates, total_updates
 
 
 def main(cfg: FairseqConfig) -> None:
@@ -165,6 +295,8 @@ def main(cfg: FairseqConfig) -> None:
         # don't cache epoch iterators for sharded datasets
         disable_iterator_cache=task.has_sharded_data("train"),
     )
+    _configure_fold_scaled_schedule(cfg, trainer, epoch_itr)
+    early_stopping_state = EarlyStoppingState.from_checkpoint(cfg, extra_state)
     if cfg.common.tpu:
         import torch_xla.core.xla_model as xm
 
@@ -185,7 +317,9 @@ def main(cfg: FairseqConfig) -> None:
             break
 
         # train for one epoch
-        valid_losses, should_stop = train(cfg, trainer, task, epoch_itr)
+        valid_losses, should_stop = train(
+            cfg, trainer, task, epoch_itr, early_stopping_state
+        )
         if should_stop:
             break
 
@@ -212,7 +346,12 @@ def main(cfg: FairseqConfig) -> None:
         logger.info("ioPath PathManager finished waiting.")
 
 
-def should_stop_early(cfg: DictConfig, valid_loss: float) -> bool:
+def should_stop_early(
+    cfg: DictConfig,
+    valid_loss: float,
+    num_updates: int,
+    state: EarlyStoppingState,
+) -> bool:
     # skip check if no validation was done in the current epoch
     if valid_loss is None:
         return False
@@ -222,27 +361,37 @@ def should_stop_early(cfg: DictConfig, valid_loss: float) -> bool:
     def is_better(a, b):
         return a > b if cfg.checkpoint.maximize_best_checkpoint_metric else a < b
 
-    prev_best = getattr(should_stop_early, "best", None)
-    if prev_best is None or is_better(valid_loss, prev_best):
-        should_stop_early.best = valid_loss
-        should_stop_early.num_runs = 0
+    improved = state.best is None or is_better(valid_loss, state.best)
+    if improved:
+        state.best = valid_loss
+        state.num_runs = 0
+
+    warmup_updates = int(getattr(cfg.lr_scheduler, "warmup_updates", 0))
+    if cfg.checkpoint.patience_after_warmup and num_updates <= warmup_updates:
+        state.num_runs = 0
         return False
-    else:
-        should_stop_early.num_runs += 1
-        if should_stop_early.num_runs >= cfg.checkpoint.patience:
-            logger.info(
-                "early stop since valid performance hasn't improved for last {} runs".format(
-                    cfg.checkpoint.patience
-                )
+
+    if improved:
+        return False
+
+    state.num_runs += 1
+    if state.num_runs >= cfg.checkpoint.patience:
+        logger.info(
+            "early stop since valid performance hasn't improved for last {} runs".format(
+                cfg.checkpoint.patience
             )
-            return True
-        else:
-            return False
+        )
+        return True
+    return False
 
 
 @metrics.aggregate("train")
 def train(
-    cfg: DictConfig, trainer: Trainer, task: tasks.FairseqTask, epoch_itr
+    cfg: DictConfig,
+    trainer: Trainer,
+    task: tasks.FairseqTask,
+    epoch_itr,
+    early_stopping_state: EarlyStoppingState,
 ) -> Tuple[List[Optional[float]], bool]:
     """Train the model for one epoch and return validation losses."""
     # Initialize data iterator
@@ -315,7 +464,13 @@ def train(
 
         end_of_epoch = not itr.has_next()
         valid_losses, should_stop = validate_and_save(
-            cfg, trainer, task, epoch_itr, valid_subsets, end_of_epoch
+            cfg,
+            trainer,
+            task,
+            epoch_itr,
+            valid_subsets,
+            end_of_epoch,
+            early_stopping_state,
         )
 
         if should_stop:
@@ -351,6 +506,7 @@ def validate_and_save(
     epoch_itr,
     valid_subsets: List[str],
     end_of_epoch: bool,
+    early_stopping_state: EarlyStoppingState,
 ) -> Tuple[List[Optional[float]], bool]:
     num_updates = trainer.get_num_updates()
     max_update = cfg.optimization.max_update or math.inf
@@ -407,12 +563,23 @@ def validate_and_save(
     if do_validate:
         valid_losses = validate(cfg, trainer, task, epoch_itr, valid_subsets)
 
-    should_stop |= should_stop_early(cfg, valid_losses[0])
+    should_stop |= should_stop_early(
+        cfg,
+        valid_losses[0],
+        num_updates,
+        early_stopping_state,
+    )
 
     # Save checkpoint
     if do_save or should_stop:
         checkpoint_utils.save_checkpoint(
-            cfg.checkpoint, trainer, epoch_itr, valid_losses[0]
+            cfg.checkpoint,
+            trainer,
+            epoch_itr,
+            valid_losses[0],
+            additional_state={
+                "early_stopping": early_stopping_state.state_dict()
+            },
         )
 
     return valid_losses, should_stop
