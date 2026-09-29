@@ -21,6 +21,7 @@ DEFAULT_CHROMAGRT_CONFIG = {
     "excluded_condition_blocks": (),
     "excluded_molecular_descriptors": (),
     "dropout": 0.05,
+    "tanaka_block_dropout": 0.0,
 
     "lr": 5e-5,
     "lr_scheduler": "ReduceLROnPlateau",

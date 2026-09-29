@@ -14,6 +14,7 @@ from src.training.model_backends.chromagrt_dataset import (
     build_target_scaler,
     collate_chromagrt,
     get_condition_columns,
+    resolve_tanaka_indices,
 )
 from src.training.model_backends.chromagrt_defaults import (
     DEFAULT_CHROMAGRT_CONFIG,
@@ -60,6 +61,25 @@ def train_chromagrt(train_df, val_df, param_dict, results_path, using_moldescs=F
         excluded_blocks=excluded_condition_blocks,
         excluded_molecular_descriptors=excluded_molecular_descriptors,
     )
+    tanaka_block_dropout = float(config.get("tanaka_block_dropout", 0.0))
+    if not 0.0 <= tanaka_block_dropout <= 1.0:
+        raise ValueError("tanaka_block_dropout must be between 0 and 1")
+    if tanaka_block_dropout > 0.0:
+        if not include_tanaka:
+            raise ValueError("Tanaka block dropout requires Tanaka inputs")
+        if config.get("condition_normalization") != "deterministic":
+            raise ValueError(
+                "Tanaka block dropout requires deterministic condition normalization"
+            )
+        value_indices, missing_indices = resolve_tanaka_indices(condition_columns)
+        tanaka_metadata = {
+            "tanaka_value_indices": value_indices,
+            "tanaka_missing_indices": missing_indices,
+            "metadata_tanaka_block_dropout_scope": "per_observation",
+            "metadata_tanaka_block_dropout_training_only": True,
+        }
+        config.update(tanaka_metadata)
+        param_dict.update(tanaka_metadata)
     target_scaler = build_target_scaler(train_df)
     train_loader = _build_loader(
         train_df,

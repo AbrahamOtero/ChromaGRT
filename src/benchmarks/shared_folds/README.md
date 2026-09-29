@@ -96,18 +96,22 @@ src/benchmarks/shared_folds/scripts/run_chromagrt_kfold.sh \
 ```
 
 The other scenarios are `data/benchmarks/article-v1/bm_scaffold` and
-`data/benchmarks/article-v1/cc`. The CC configuration reported in the article
-uses deterministic condition normalization, dropout 0.15, and no Tanaka
-descriptors:
+`data/benchmarks/article-v1/cc`. The condition-shift configuration reported for
+the CC scenario uses deterministic condition normalization, model-wide dropout
+0.05, and stochastic masking of the complete Tanaka block with probability
+0.5. One mask is sampled independently for each training observation; masking
+is disabled during validation and testing:
 
 ```bash
 src/benchmarks/shared_folds/scripts/run_chromagrt_kfold.sh \
   data/benchmarks/article-v1/cc \
-  --condition-normalization deterministic --dropout 0.15 --no-use-tanaka
+  --condition-normalization deterministic \
+  --dropout 0.05 \
+  --tanaka-block-dropout 0.5
 ```
 
 The launcher trains the ten folds and writes a summary when all runs finish.
-The default configuration uses training-fold normalization, dropout 0.05,
+The standard configuration uses training-fold normalization, dropout 0.05,
 Tanaka descriptors, and AdamW (`weight_decay=0.01`) with an initial learning
 rate of `5e-5`. `ReduceLROnPlateau` monitors validation MAE with a reduction
 factor of 0.5, patience 10, and a minimum learning rate of `1e-6`. Early

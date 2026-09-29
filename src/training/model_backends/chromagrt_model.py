@@ -16,6 +16,7 @@ from src.training.model_backends.chromagrt_defaults import (
     PLATEAU_THRESHOLD_MODE,
     WEIGHT_DECAY,
 )
+from src.training.model_backends.chromagrt_dataset import TANAKA_COLUMNS
 
 
 class ChromaGRTEncoderLayer(nn.Module):
@@ -64,6 +65,39 @@ class ChromaGRTRegressor(pl.LightningModule):
 
         self.target_mean = float(target_mean)
         self.target_std = float(target_std)
+        self.tanaka_block_dropout = float(
+            self.config.get("tanaka_block_dropout", 0.0)
+        )
+        if not 0.0 <= self.tanaka_block_dropout <= 1.0:
+            raise ValueError("tanaka_block_dropout must be between 0 and 1")
+
+        self.tanaka_value_indices = tuple(
+            int(index) for index in self.config.get("tanaka_value_indices", ())
+        )
+        self.tanaka_missing_indices = tuple(
+            int(index) for index in self.config.get("tanaka_missing_indices", ())
+        )
+        if self.tanaka_block_dropout > 0.0:
+            expected_size = len(TANAKA_COLUMNS)
+            if (
+                len(self.tanaka_value_indices) != expected_size
+                or len(self.tanaka_missing_indices) != expected_size
+            ):
+                raise ValueError(
+                    f"Expected {expected_size} Tanaka value indices and "
+                    f"{expected_size} missingness indices"
+                )
+            all_indices = (
+                *self.tanaka_value_indices,
+                *self.tanaka_missing_indices,
+            )
+            if len(set(all_indices)) != len(all_indices):
+                raise ValueError(
+                    "Tanaka value and missingness indices must be distinct"
+                )
+            if any(index < 0 or index >= condition_dim for index in all_indices):
+                raise ValueError("Tanaka indices fall outside the condition input")
+
         self.atom_encoder = nn.Embedding(119, hidden_dim, padding_idx=0)
         self.degree_encoder = nn.Embedding(6, hidden_dim, padding_idx=0)
         self.formal_charge_encoder = nn.Embedding(7, hidden_dim)
@@ -143,8 +177,44 @@ class ChromaGRTRegressor(pl.LightningModule):
         attn_bias = torch.cat([attn_bias, row_bias], dim=1)
         return torch.cat([attn_bias, torch.cat([column_bias, corner_bias], dim=1)], dim=2)
 
+    def _apply_tanaka_block_dropout(self, conditions):
+        if not self.training or self.tanaka_block_dropout == 0.0:
+            return conditions
+
+        batch_size = conditions.shape[0]
+        if self.tanaka_block_dropout == 1.0:
+            dropped = torch.ones(
+                batch_size,
+                dtype=torch.bool,
+                device=conditions.device,
+            )
+        else:
+            dropped = (
+                torch.rand(batch_size, device=conditions.device)
+                < self.tanaka_block_dropout
+            )
+
+        masked_conditions = conditions.clone()
+        row_mask = dropped.unsqueeze(1)
+
+        tanaka_values = masked_conditions[:, self.tanaka_value_indices]
+        masked_conditions[:, self.tanaka_value_indices] = torch.where(
+            row_mask,
+            torch.zeros_like(tanaka_values),
+            tanaka_values,
+        )
+
+        missingness = masked_conditions[:, self.tanaka_missing_indices]
+        masked_conditions[:, self.tanaka_missing_indices] = torch.where(
+            row_mask,
+            torch.ones_like(missingness),
+            missingness,
+        )
+        return masked_conditions
+
     def _encode_conditions(self, batch):
-        return self.condition_encoder(batch["conditions"])
+        conditions = self._apply_tanaka_block_dropout(batch["conditions"])
+        return self.condition_encoder(conditions)
 
     def forward(self, batch):
         x = self._node_features(batch)

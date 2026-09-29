@@ -119,6 +119,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Molecular descriptors to omit: mono_iso_mass and/or xlogp.",
     )
     model.add_argument("--dropout", type=float, default=_env_float("CHROMAGRT_DROPOUT", defaults["dropout"]))
+    model.add_argument(
+        "--tanaka-block-dropout",
+        type=float,
+        default=_env_float(
+            "CHROMAGRT_TANAKA_BLOCK_DROPOUT",
+            defaults["tanaka_block_dropout"],
+        ),
+        help=(
+            "Probability of masking the complete Tanaka value/missingness block "
+            "for each training observation. Requires deterministic condition "
+            "normalization and Tanaka inputs."
+        ),
+    )
 
     training = parser.add_argument_group("optimization")
     training.add_argument(
@@ -173,4 +186,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         parser.error("--plateau-patience must be non-negative")
     if args.plateau_min_lr < 0.0:
         parser.error("--plateau-min-lr must be non-negative")
+    if not 0.0 <= args.tanaka_block_dropout <= 1.0:
+        parser.error("--tanaka-block-dropout must be between 0 and 1")
+    if args.tanaka_block_dropout > 0.0:
+        if not args.use_tanaka:
+            parser.error("--tanaka-block-dropout requires --use-tanaka")
+        if args.condition_normalization != "deterministic":
+            parser.error(
+                "--tanaka-block-dropout requires deterministic condition "
+                "normalization"
+            )
     return args

@@ -35,6 +35,29 @@ MOLECULAR_DESCRIPTOR_COLUMNS = ("mono_iso_mass", "xlogp")
 EXCLUDABLE_MOLECULAR_DESCRIPTORS = frozenset(MOLECULAR_DESCRIPTOR_COLUMNS)
 
 
+def resolve_tanaka_indices(condition_columns):
+    """Return Tanaka value and missingness positions in a condition vector."""
+    columns = tuple(condition_columns)
+    duplicated = [column for column in set(columns) if columns.count(column) > 1]
+    if duplicated:
+        raise ValueError(
+            "Condition columns contain duplicates: " + ", ".join(sorted(duplicated))
+        )
+
+    required = (*TANAKA_COLUMNS, *TANAKA_MISSING_COLUMNS)
+    missing = [column for column in required if column not in columns]
+    if missing:
+        raise ValueError(
+            "Tanaka block dropout requires all Tanaka values and missingness "
+            "indicators. Missing columns: " + ", ".join(missing)
+        )
+
+    return (
+        tuple(columns.index(column) for column in TANAKA_COLUMNS),
+        tuple(columns.index(column) for column in TANAKA_MISSING_COLUMNS),
+    )
+
+
 def _normalize_excluded_condition_blocks(excluded_blocks):
     """Validate the optional chromatography blocks removed for an ablation."""
     if excluded_blocks is None:

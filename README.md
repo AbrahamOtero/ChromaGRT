@@ -120,8 +120,9 @@ DATA_ROOT=data                              # Zenodo archive extracted at the re
 
 ### ChromaGRT
 
-The default configuration uses dropout 0.05, Tanaka descriptors, and AdamW
-(`weight_decay=0.01`) with an initial learning rate of `5e-5`.
+The standard configuration uses training-fold normalization, dropout 0.05,
+Tanaka descriptors, and AdamW (`weight_decay=0.01`) with an initial learning
+rate of `5e-5`.
 `ReduceLROnPlateau` monitors validation MAE with a reduction factor of 0.5,
 patience 10, and a minimum learning rate of `1e-6`.
 Validation-MAE checkpointing, early stopping with patience 30, seed 42, and a
@@ -148,8 +149,21 @@ REPORT_MOLDESC_PATH="$DATA_ROOT/complete_moldesc.tsv" \
 src/benchmarks/shared_folds/scripts/run_chromagrt_kfold.sh \
   "$DATA_ROOT/benchmarks/article-v1/random" \
   --condition-normalization standard \
+  --dropout 0.05
+```
+
+The condition-shift configuration uses deterministic normalization and
+stochastically masks the complete Tanaka block for each training observation
+with probability 0.5. The mask is disabled during validation and testing. Run
+this configuration on the chromatographic-condition folds with:
+
+```bash
+REPORT_MOLDESC_PATH="$DATA_ROOT/complete_moldesc.tsv" \
+src/benchmarks/shared_folds/scripts/run_chromagrt_kfold.sh \
+  "$DATA_ROOT/benchmarks/article-v1/cc" \
+  --condition-normalization deterministic \
   --dropout 0.05 \
-  --use-tanaka
+  --tanaka-block-dropout 0.5
 ```
 
 The complete workflow and the input-ablations are documented
@@ -168,3 +182,12 @@ a scenario as follows:
 bash src/benchmarks/graphormer_rt/scripts/run_graphormer_rt_kfold_fold_imputed.sh \
   "$DATA_ROOT/benchmarks/article-v1/random"
 ```
+
+## License
+
+The original ChromaGRT source code is distributed under the GNU General Public
+License version 3 only (`GPL-3.0-only`). See [LICENSE](LICENSE) for details.
+
+This license does not apply to third-party software included in this repository,
+which remains subject to the terms established by its respective copyright
+holders. It also does not apply to the datasets or manuscript files.
